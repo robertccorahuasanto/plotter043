@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MAX86916 PPG Plotter (Web Bluetooth)</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#121a23;
+      --muted:#9bb0c5;
+      --fg:#e7eef6;
+      --grid:rgba(255,255,255,.10);
+      --accent:#48b0ff;
+      --warn:#ffb020;
+      --bad:#ff4d4d;
+      --ok:#5cff8a;
+      --ir:#48b0ff;
+      --red:#ff5c5c;
+      --green:#5cff8a;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+    }
+    [data-theme="light"]{
+      --bg:#f6f8fb;
+      --panel:#ffffff;
+      --muted:#546a80;
+      --fg:#0b1724;
+      --grid:rgba(0,0,0,.10);
+      --accent:#0077ff;
+      --warn:#b86a00;
+      --bad:#cc1f1f;
+      --ok:#0f8f3b;
+      --ir:#0077ff;
+      --red:#d42a2a;
+      --green:#0f8f3b;
+      --shadow:0 10px 30px rgba(0,0,0,.10);
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(72,176,255,.25), transparent 60%),
+                  radial-gradient(900px 500px at 110% 10%, rgba(92,255,138,.14), transparent 60%),
+                  var(--bg);
+      color:var(--fg);
+    }
+    .wrap{max-width:1100px;margin:18px auto;padding:0 14px 22px;}
+    .top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+    .title{display:flex;flex-direction:column;gap:2px;}
+    h1{font-size:18px;margin:0;letter-spacing:.2px}
+    .sub{font-size:12px;color:var(--muted);line-height:1.4}
+    .panel{
+      background:linear-gradient(180deg, rgba(255,255,255,.04), transparent 40%), var(--panel);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+    }
+    [data-theme="light"] .panel{
+      border:1px solid rgba(0,0,0,.07);
+      background:linear-gradient(180deg, rgba(0,0,0,.02), transparent 40%), var(--panel);
+    }
+    .controls{padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;}
+    .controls-left,.controls-right{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    button{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.06);
+      color:var(--fg);
+      padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:600;letter-spacing:.2px;
+      transition: transform .05s ease, background .2s ease, border-color .2s ease;
+      user-select:none;
+    }
+    [data-theme="light"] button{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
+    button:hover{background:rgba(255,255,255,.10)}
+    [data-theme="light"] button:hover{background:rgba(0,0,0,.06)}
+    button:active{transform:translateY(1px)}
+    button.primary{background:linear-gradient(180deg, rgba(72,176,255,.22), rgba(72,176,255,.08));border-color:rgba(72,176,255,.35);}
+    button.danger{background:linear-gradient(180deg, rgba(255,77,77,.22), rgba(255,77,77,.08));border-color:rgba(255,77,77,.35);}
+    button:disabled{opacity:.55; cursor:not-allowed;}
+
+    .pill{
+      font-size:12px;padding:8px 10px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);
+      color:var(--muted);display:flex;gap:8px;align-items:center;white-space:nowrap;
+    }
+    [data-theme="light"] .pill{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
+    .dot{width:8px;height:8px;border-radius:50%;}
+    .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+
+    .grid{display:grid;grid-template-columns: 1fr;gap:12px;}
+    .vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+    .vital{padding:14px 16px;}
+    .vital .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+    .vital .val{font-size:30px;font-weight:800;line-height:1.1;margin-top:4px}
+    .vital .unit{font-size:12px;color:var(--muted);margin-left:4px;font-weight:500}
+    .vital .note{font-size:11px;color:var(--muted);margin-top:4px}
+
+    .plot-panel{padding:12px}
+    .plot-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .plot-title{font-weight:800;font-size:13px}
+    .plot-meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .plot{width:100%;height:300px;border-radius:14px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.06);display:block;}
+    [data-theme="light"] .plot{background:rgba(0,0,0,.03);border-color:rgba(0,0,0,.08)}
+    .plot.small{height:220px}
+    .legend{display:flex;gap:12px;font-size:12px;color:var(--muted)}
+    .legend span::before{content:"";display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle;background:currentColor}
+    .legend .ir{color:var(--ir)} .legend .red{color:var(--red)} .legend .green{color:var(--green)}
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    label{font-size:12px;color:var(--muted)}
+    input[type="number"],input[type="text"],select{
+      width:88px;padding:9px 10px;border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:var(--fg);outline:none;
+    }
+    select{width:auto}
+    [data-theme="light"] input,[data-theme="light"] select{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
+    .ma{font-size:11px;color:var(--muted);min-width:52px}
+
+    .footer{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.4;}
+    code{
+      background:rgba(255,255,255,.06);padding:2px 6px;border-radius:8px;border:1px solid rgba(255,255,255,.10);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:12px;
+    }
+    [data-theme="light"] code{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.10)}
+  </style>
+</head>
+
+<body data-theme="dark">
+  <div class="wrap">
+    <div class="top">
+      <div class="title">
+        <h1>MAX86916 PPG Plotter — Web Bluetooth</h1>
+        <div class="sub">
+          Reads v7 frames: <code>[float32 t_start] + [spp × 3 ch × u24 LE]</code> (IR, Red, Green; raw 24-bit FIFO items, 19-bit ADC in bits 18:0).
+          Diag: <code>36 bytes</code> (incl. register read-back). Control: <code>[IR_PA][RED_PA][GREEN_PA][ADC_RGE][LED_PW]</code>.
+          <br/>Trace colours: <b style="color:var(--ir)">IR = blue</b> (the IR LED itself is invisible), <b style="color:var(--red)">Red</b>, <b style="color:var(--green)">Green</b>. No blue LED is used.
+          <br/>Tip: Use <b>Chrome on Android/desktop</b> + HTTPS. iOS Safari doesn’t support Web Bluetooth.
+        </div>
+      </div>
+      <div class="pill" id="statusPill">
+        <span class="dot bad" id="statusDot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </div>
+
+    <div class="panel controls">
+      <div class="controls-left">
+        <button class="primary" id="btnConnect">Connect BLE</button>
+        <button class="danger" id="btnDisconnect" disabled>Disconnect</button>
+        <button id="btnClear" disabled>Clear</button>
+        <button id="btnSave" disabled>Save CSV</button>
+        <button id="btnTheme">Toggle Theme</button>
+      </div>
+      <div class="controls-right">
+        <div class="row">
+          <label for="namePrefix">Name prefix</label>
+          <input id="namePrefix" type="text" value="ANNA" style="width:120px" />
+        </div>
+        <div class="row">
+          <label for="timeWindow">Window (s)</label>
+          <input id="timeWindow" type="number" min="1" max="120" step="1" value="8">
+        </div>
+        <div class="pill"><span>Rate:</span><b id="rateHz">0</b><span>samp/s</span></div>
+        <div class="pill"><span>Packets:</span><b id="packetCount">0</b></div>
+        <div class="pill"><span>Notif:</span><b id="notifSize">--</b></div>
+      </div>
+    </div>
+
+    <div class="panel controls" style="margin-top:12px;">
+      <div class="controls-left">
+        <div class="row"><label>IR</label><input id="paIr" type="number" min="0" max="255" value="10"><span class="ma" id="maIr">2.0 mA</span></div>
+        <div class="row"><label>Red</label><input id="paRed" type="number" min="0" max="255" value="10"><span class="ma" id="maRed">2.0 mA</span></div>
+        <div class="row"><label>Green</label><input id="paGreen" type="number" min="0" max="255" value="20"><span class="ma" id="maGreen">4.0 mA</span></div>
+        <div class="row"><label>Pulse</label>
+          <select id="ledPw">
+            <option value="0">70 µs</option><option value="1">120 µs</option>
+            <option value="2">220 µs</option><option value="3" selected>420 µs</option>
+          </select>
+        </div>
+        <div class="row"><label>ADC FS</label>
+          <select id="adcRge">
+            <option value="0">4.1 µA</option><option value="1">8.2 µA</option>
+            <option value="2">16.4 µA</option><option value="3" selected>32.8 µA</option>
+          </select>
+        </div>
+        <button id="btnApply" disabled>Apply to sensor</button>
+      </div>
+      <div class="controls-right">
+        <div class="pill"><span id="diagText">Diag: --</span></div>
+        <div class="pill"><span id="sensorText">Sensor: --</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:12px;padding:10px 14px;font-size:12px;color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace" id="regsLine">Chip registers → (waiting for diag packet)</div>
+
+    <div class="panel plot-panel" style="margin-top:12px;">
+      <div class="plot-head">
+        <div class="plot-title">Diagnostic log</div>
+        <div class="plot-meta">
+          <span>connection steps · diag packets (raw hex + decoded) · errors · signal stats every 5 s</span>
+          <button id="btnCopyLog" style="padding:6px 10px">Copy log</button>
+          <button id="btnClearLog" style="padding:6px 10px">Clear log</button>
+        </div>
+      </div>
+      <pre id="logBox" style="margin:0;height:220px;overflow:auto;white-space:pre-wrap;font-size:11.5px;line-height:1.45;padding:10px;border-radius:12px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);font-family:ui-monospace,Menlo,Consolas,monospace"></pre>
+    </div>
+
+    <div class="vitals" style="margin-top:12px;">
+      <div class="panel vital"><div class="lbl">Heart rate</div><div class="val"><span id="hrVal">--</span><span class="unit">bpm</span></div><div class="note" id="hrNote">from <span id="hrSrcName">IR</span> channel</div></div>
+      <div class="panel vital"><div class="lbl">SpO₂ (uncalibrated)</div><div class="val"><span id="spo2Val">--</span><span class="unit">%</span></div><div class="note">R = <span id="rVal">--</span> · needs empirical calibration</div></div>
+      <div class="panel vital"><div class="lbl">Perfusion index</div><div class="val"><span id="piVal">--</span><span class="unit">%</span></div><div class="note">AC/DC of IR</div></div>
+      <div class="panel vital"><div class="lbl">DC counts</div><div class="val" style="font-size:16px;margin-top:8px"><span id="dcIr">--</span> / <span id="dcRed">--</span> / <span id="dcGreen">--</span></div><div class="note">IR / Red / Green (19-bit, max 524287)</div></div>
+    </div>
+
+    <div class="grid" style="margin-top:12px;">
+      <div class="panel plot-panel">
+        <div class="plot-head">
+          <div class="plot-title">Raw ADC counts</div>
+          <div class="plot-meta">
+            <label for="rawMode">Show</label>
+            <select id="rawMode">
+              <option value="all">All (each auto-scaled)</option>
+              <option value="0">IR only</option><option value="1">Red only</option><option value="2">Green only</option>
+            </select>
+            <div class="legend"><span class="ir">IR</span><span class="red">Red</span><span class="green">Green</span></div>
+          </div>
+        </div>
+        <canvas class="plot" id="plotRaw"></canvas>
+      </div>
+
+      <div class="panel plot-panel">
+        <div class="plot-head">
+          <div class="plot-title">PPG waveform (baseline removed, inverted, shifted ≥ 0)</div>
+          <div class="plot-meta">
+            <label for="hrSrc">HR source</label>
+            <select id="hrSrc">
+              <option value="0" selected>IR (finger)</option>
+              <option value="2">Green (wrist)</option>
+              <option value="1">Red</option>
+            </select>
+            <span>•</span><span>0.3–5 Hz band</span>
+          </div>
+        </div>
+        <canvas class="plot small" id="plotProc"></canvas>
+      </div>
+    </div>
+
+    <div class="footer">
+      Service: <code>cddf1000-30f7-4671-8b43-5e40ba53514a</code> •
+      PPG: <code>cddf1002-…</code> • Diag: <code>cddf1003-…</code> • Ctrl: <code>cddf1004-…</code>
+      <br/>SpO₂ here is a ratio-of-ratios estimate (SpO₂ ≈ 110 − 25·R). The coefficients must be fitted against a
+      reference (CO-oximetry or a calibrated oximeter) for this optical stack before any clinical use.
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ====== BLE UUIDs ======
+  const SERVICE_UUID   = "cddf1000-30f7-4671-8b43-5e40ba53514a";
+  const PPG_CHAR_UUID  = "cddf1002-30f7-4671-8b43-5e40ba53514a";
+  const DIAG_CHAR_UUID = "cddf1003-30f7-4671-8b43-5e40ba53514a";
+  const CTRL_CHAR_UUID = "cddf1004-30f7-4671-8b43-5e40ba53514a";
+
+  // ====== Stream geometry (overwritten by the diag packet) ======
+  let FS_HZ = 100, N_CH = 3, SPP = 20;
+  const frameSize = () => 4 + SPP * N_CH * 3;
+
+  // ====== UI ======
+  const el = (id) => document.getElementById(id);
+  const btnConnect = el("btnConnect"), btnDisconnect = el("btnDisconnect");
+  const btnClear = el("btnClear"), btnSave = el("btnSave"), btnTheme = el("btnTheme"), btnApply = el("btnApply");
+  const namePrefixInput = el("namePrefix"), timeWindowInput = el("timeWindow");
+  const statusDot = el("statusDot"), statusText = el("statusText");
+  const rateHz = el("rateHz"), packetCountEl = el("packetCount"), notifSizeEl = el("notifSize");
+  const diagTextEl = el("diagText"), sensorTextEl = el("sensorText"), regsEl = el("regsLine");
+  const rawMode = el("rawMode"), hrSrc = el("hrSrc");
+  const canvasRaw = el("plotRaw"), canvasProc = el("plotProc");
+  const ctxRaw = canvasRaw.getContext("2d"), ctxProc = canvasProc.getContext("2d");
+  const paInputs = [el("paIr"), el("paRed"), el("paGreen")];
+  const maLabels = [el("maIr"), el("maRed"), el("maGreen")];
+  const adcRgeSel = el("adcRge"), ledPwSel = el("ledPw");
+
+  // ====== Diagnostic log (copy/paste-able) ======
+  const logBox = el("logBox"); const logLines = []; const t0 = performance.now();
+  function log(msg){
+    const ts = ((performance.now() - t0)/1000).toFixed(2).padStart(7," ");
+    logLines.push(`[${ts}s] ${msg}`); if (logLines.length > 400) logLines.shift();
+    logBox.textContent = logLines.join("\n"); logBox.scrollTop = logBox.scrollHeight;
+  }
+  const hex = (u8) => Array.from(u8).map(b => b.toString(16).padStart(2,"0")).join(" ");
+  el("btnCopyLog").addEventListener("click", async () => {
+    const txt = logLines.join("\n");
+    try { await navigator.clipboard.writeText(txt); log("(log copied to clipboard)"); }
+    catch(_e){ const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); log("(log copied)"); }
+  });
+  el("btnClearLog").addEventListener("click", () => { logLines.length = 0; logBox.textContent = ""; });
+  window.addEventListener("error", (e) => log(`JS ERROR: ${e.message} @${e.lineno}`));
+  window.addEventListener("unhandledrejection", (e) => log(`JS REJECTION: ${e.reason?.message || e.reason}`));
+  log(`page loaded · UA ${navigator.userAgent.slice(0,80)} · webBluetooth=${!!navigator.bluetooth}`);
+
+  function setStatus(mode, text){
+    statusText.textContent = text;
+    statusDot.className = "dot " + (mode === "ok" ? "ok" : mode === "warn" ? "warn" : "bad");
+    log(`status: ${text}`);
+  }
+  function updateMa(){ paInputs.forEach((inp,i)=>{ maLabels[i].textContent = (Number(inp.value)*0.2).toFixed(1)+" mA"; }); }
+  paInputs.forEach(inp => inp.addEventListener("input", updateMa));
+  updateMa();
+
+  // ====== Data buffers ======
+  const tAll = [];
+  const raw = [[], [], []];          // IR, Red, Green counts (19-bit, masked)
+  const sat = [[], [], []];          // true when FIFO bits 23:19 were set (ADC over-range)
+  const proc = [[], [], []];         // band-passed, inverted
+  let packetCount = 0;
+  // Packet-phase check: mean of sample #0 of each packet vs. mean of the rest.
+  // A ratio far from 1.0 means the I²C read is landing on an optical exposure.
+  const phase = [0,1,2].map(() => ({ s0: 0, n0: 0, sr: 0, nr: 0 }));
+
+  function getTimeWindow(){ const v = Number(timeWindowInput.value); return (Number.isFinite(v) && v > 0) ? v : 8; }
+
+  // ====== Per-channel DSP state ======
+  // High-pass: EMA baseline (alpha 0.02 @100 Hz → fc ≈ 0.32 Hz)
+  // Low-pass: 2nd-order Butterworth, fc = 5 Hz, designed for the live FS
+  const HP_ALPHA = 0.02;
+  let lp = null;
+  function designLP(fs){
+    const fc = 5, w = Math.tan(Math.PI * fc / fs), k = Math.SQRT2;
+    const n = 1 / (1 + k*w + w*w);
+    return { b0: w*w*n, b1: 2*w*w*n, b2: w*w*n, a1: 2*(w*w - 1)*n, a2: (1 - k*w + w*w)*n };
+  }
+  const chState = [0,1,2].map(() => ({ base: null, x1:0, x2:0, y1:0, y2:0 }));
+
+  function processSample(ch, v){
+    const s = chState[ch];
+    if (s.base === null) s.base = v;
+    s.base = (1 - HP_ALPHA) * s.base + HP_ALPHA * v;
+    const hp = -(v - s.base);                       // invert: systole → upward peak
+    const y = lp.b0*hp + lp.b1*s.x1 + lp.b2*s.x2 - lp.a1*s.y1 - lp.a2*s.y2;
+    s.x2 = s.x1; s.x1 = hp; s.y2 = s.y1; s.y1 = y;
+    return y;
+  }
+  function resetDSP(){ lp = designLP(FS_HZ); chState.forEach(s => { s.base=null; s.x1=s.x2=s.y1=s.y2=0; }); }
+  resetDSP();
+
+  // ====== Heart-rate peak detector (on the selected processed channel) ======
+  const hr = { lastPeakT: -1, prev2: 0, prev1: 0, ampEMA: 0, rr: [], bpm: null };
+  function hrFeed(t, y){
+    const minRR = 0.30;                                   // 200 bpm cap
+    const thr = 0.45 * hr.ampEMA;
+    if (hr.prev1 > hr.prev2 && hr.prev1 >= y && hr.prev1 > thr && hr.prev1 > 0) {
+      if (t - hr.lastPeakT >= minRR) {
+        if (hr.lastPeakT >= 0) {
+          const rr = t - hr.lastPeakT;
+          if (rr <= 2.0) { hr.rr.push(rr); if (hr.rr.length > 8) hr.rr.shift(); }
+        }
+        hr.lastPeakT = t;
+        hr.ampEMA = hr.ampEMA ? 0.8*hr.ampEMA + 0.2*hr.prev1 : hr.prev1;
+      }
+    }
+    hr.prev2 = hr.prev1; hr.prev1 = y;
+    if (hr.rr.length >= 4) {
+      const s = [...hr.rr].sort((a,b)=>a-b);
+      hr.bpm = 60 / s[Math.floor(s.length/2)];
+    }
+  }
+  function resetHR(){ hr.lastPeakT=-1; hr.prev1=hr.prev2=0; hr.ampEMA=0; hr.rr=[]; hr.bpm=null; }
+
+  // ====== SpO2 ratio-of-ratios over the last 4 s ======
+  function computeVitals(){
+    const n = tAll.length; if (n < FS_HZ * 2) return;
+    const win = Math.min(n, Math.round(FS_HZ * 4));
+    const i0 = n - win;
+    const stats = (ch) => {
+      let dc = 0, ac2 = 0;
+      for (let i = i0; i < n; i++){ dc += raw[ch][i]; ac2 += proc[ch][i]*proc[ch][i]; }
+      dc /= win; return { dc, ac: Math.sqrt(ac2/win) };
+    };
+    const ir = stats(0), red = stats(1), gr = stats(2);
+    el("dcIr").textContent = Math.round(ir.dc); el("dcRed").textContent = Math.round(red.dc); el("dcGreen").textContent = Math.round(gr.dc);
+
+    const contact = ir.dc > 5000 && red.dc > 2000;      // crude "finger present" gate
+    if (!contact) { el("hrVal").textContent = "--"; el("spo2Val").textContent = "--"; el("piVal").textContent = "--"; el("rVal").textContent = "--"; return; }
+
+    const pi = 100 * ir.ac / ir.dc;
+    el("piVal").textContent = pi.toFixed(2);
+    const R = (red.ac/red.dc) / (ir.ac/ir.dc);
+    el("rVal").textContent = R.toFixed(3);
+    const spo2 = 110 - 25 * R;                           // placeholder linear fit
+    el("spo2Val").textContent = (pi > 0.1 && spo2 > 50 && spo2 <= 100) ? spo2.toFixed(1) : "--";
+    el("hrVal").textContent = (hr.bpm && hr.bpm >= 30 && hr.bpm <= 220) ? Math.round(hr.bpm) : "--";
+  }
+
+  // ====== Rate tracking ======
+  let lastRateCheck = performance.now(), lastSampleCount = 0;
+  let statTick = 0;
+  function updateRateUI(){
+    const now = performance.now();
+    if (now - lastRateCheck >= 1000){
+      const hz = tAll.length - lastSampleCount;
+      rateHz.textContent = String(hz);
+      lastSampleCount = tAll.length; lastRateCheck = now;
+      computeVitals();
+      if (++statTick % 5 === 0 && tAll.length > 0){
+        const n = Math.min(tAll.length, 500), i0 = tAll.length - n;
+        const st = (ch) => { let mn=Infinity,mx=-Infinity,s=0,ns=0; for (let i=i0;i<tAll.length;i++){const v=raw[ch][i]; if(v<mn)mn=v; if(v>mx)mx=v; s+=v; if(sat[ch][i]) ns++;} return `${Math.round(s/n)} [${mn}..${mx}]${ns?` SAT×${ns}`:""}`; };
+        const ph = (ch) => { const p=phase[ch]; if(!p.n0||!p.nr||!p.sr) return "–"; const r=(p.s0/p.n0)/(p.sr/p.nr); p.s0=p.n0=p.sr=p.nr=0; return r.toFixed(2); };
+        log(`stats(last ${n}): rate=${hz}/s pkts=${packetCount} IR ${st(0)} Red ${st(1)} Green ${st(2)} HR=${el("hrVal").textContent} SpO2=${el("spo2Val").textContent} PI=${el("piVal").textContent} · pkt-phase ratio (sample0/rest) IR ${ph(0)} Red ${ph(1)} Green ${ph(2)}`);
+      }
+    }
+  }
+
+  // ====== RX buffering / frame parsing ======
+  let rxBuf = new Uint8Array(0);
+  function appendToRxBuf(chunk){ const m = new Uint8Array(rxBuf.length + chunk.length); m.set(rxBuf,0); m.set(chunk, rxBuf.length); rxBuf = m; }
+  function parseFramesFromRxBuf(){
+    const FS = frameSize();
+    while (rxBuf.length >= FS){
+      const f = rxBuf.slice(0, FS); rxBuf = rxBuf.slice(FS);
+      const dv = new DataView(f.buffer, f.byteOffset, f.byteLength);
+      const tStart = dv.getFloat32(0, true);
+      if (packetCount < 2 || packetCount % 100 === 0) {
+        const r24 = (k) => "0x" + (f[4+3*k] | (f[5+3*k] << 8) | (f[6+3*k] << 16)).toString(16).padStart(6,"0");
+        log(`frame#${packetCount} ${FS}B t_start=${tStart.toFixed(3)} sample0 raw24 IR=${r24(0)} Red=${r24(1)} Green=${r24(2)} · sample1 IR=${r24(3)} Red=${r24(4)} Green=${r24(5)}`);
+      }
+      let o = 4;
+      const hsrc = Number(hrSrc.value);
+      for (let i = 0; i < SPP; i++){
+        const t = tStart + i / FS_HZ;
+        tAll.push(t);
+        for (let c = 0; c < N_CH; c++){
+          const u = f[o] | (f[o+1] << 8) | (f[o+2] << 16); o += 3;   // raw u24 LE FIFO item
+          const v = u & 0x7FFFF;                                        // 19-bit ADC count
+          raw[c].push(v);
+          sat[c].push((u & 0xF80000) !== 0);                            // bits 23:19 → over-range
+          const p = phase[c]; if (i === 0) { p.s0 += v; p.n0++; } else { p.sr += v; p.nr++; }
+          const q = processSample(c, v);
+          proc[c].push(q);
+          if (c === hsrc) hrFeed(t, q);
+        }
+      }
+      packetCount++;
+    }
+    packetCountEl.textContent = String(packetCount);
+  }
+
+  // ====== Plotting ======
+  function resizeCanvasToDisplaySize(canvas){
+    const {width, height} = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.floor(width * dpr)), h = Math.max(1, Math.floor(height * dpr));
+    if (canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  }
+  const cssVar = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
+
+  function drawAxes(ctx, w, h, padding, xLabel, yLabel){
+    ctx.clearRect(0,0,w,h);
+    ctx.strokeStyle = cssVar("--grid"); ctx.lineWidth = 1;
+    const nGrid = 6;
+    for (let i=0;i<=nGrid;i++){ const y = padding + (h-2*padding)*(i/nGrid); ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(w-padding,y); ctx.stroke(); }
+    for (let i=0;i<=nGrid;i++){ const x = padding + (w-2*padding)*(i/nGrid); ctx.beginPath(); ctx.moveTo(x,padding); ctx.lineTo(x,h-padding); ctx.stroke(); }
+    ctx.fillStyle = cssVar("--muted");
+    ctx.font = `${Math.round(12*(window.devicePixelRatio||1))}px ui-sans-serif, system-ui`;
+    ctx.textAlign = "left";
+    ctx.fillText(xLabel, padding, h - Math.max(6, padding*0.35));
+    ctx.save(); ctx.translate(Math.max(6, padding*0.35), padding); ctx.rotate(-Math.PI/2); ctx.fillText(yLabel, 0, 0); ctx.restore();
+    const theme = document.body.getAttribute("data-theme");
+    ctx.strokeStyle = (theme === "light") ? "rgba(0,0,0,.10)" : "rgba(255,255,255,.08)";
+    ctx.strokeRect(padding, padding, w-2*padding, h-2*padding);
+  }
+
+  function drawLine(ctx, w, h, padding, xs, ys, xMin, xMax, yMin, yMax, color){
+    const plotW = w - 2*padding, plotH = h - 2*padding;
+    const xSpan = (xMax - xMin) || 1e-9, ySpan = (yMax - yMin) || 1e-9;
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, (window.devicePixelRatio||1) * 1.25);
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath(); let started = false;
+    const N = xs.length, step = Math.max(1, Math.floor(N / 2000));
+    for (let i=0; i<N; i+=step){
+      const px = padding + ((xs[i]-xMin)/xSpan)*plotW;
+      const py = padding + (1 - ((ys[i]-yMin)/ySpan))*plotH;
+      if (!started){ ctx.moveTo(px,py); started = true; } else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  }
+
+  function windowStart(){
+    const tw = getTimeWindow(), tMax = tAll[tAll.length-1], target = tMax - tw;
+    let lo = 0, hi = tAll.length - 1;
+    while (lo < hi){ const mid = (lo+hi)>>1; if (tAll[mid] < target) lo = mid+1; else hi = mid; }
+    return lo;
+  }
+  function minMax(a){ let mn=Infinity, mx=-Infinity; for (const v of a){ if (v<mn) mn=v; if (v>mx) mx=v; } return [mn,mx]; }
+  const chColor = ["--ir","--red","--green"];
+
+  function draw(){
+    resizeCanvasToDisplaySize(canvasRaw); resizeCanvasToDisplaySize(canvasProc);
+    const pad = Math.round(26 * (window.devicePixelRatio||1));
+    drawAxes(ctxRaw, canvasRaw.width, canvasRaw.height, pad, "Time (s)", "ADC counts");
+    drawAxes(ctxProc, canvasProc.width, canvasProc.height, pad, "Time (s)", "PPG (a.u.)");
+
+    if (tAll.length > 1){
+      const i0 = windowStart();
+      const xs = tAll.slice(i0), tMin = xs[0], tMax = xs[xs.length-1];
+      const mode = rawMode.value;
+      const chans = (mode === "all") ? [0,1,2] : [Number(mode)];
+      for (const c of chans){
+        const ys = raw[c].slice(i0);
+        let [mn,mx] = minMax(ys); const m = (mx-mn)*0.1 || 1;
+        drawLine(ctxRaw, canvasRaw.width, canvasRaw.height, pad, xs, ys, tMin, tMax, mn-m, mx+m, cssVar(chColor[c]));
+      }
+      const hc = Number(hrSrc.value);
+      const ps = proc[hc].slice(i0);
+      const [pmn,pmx] = minMax(ps);
+      const shifted = ps.map(v => v - pmn);
+      drawLine(ctxProc, canvasProc.width, canvasProc.height, pad, xs, shifted, tMin, tMax, 0, ((pmx-pmn)*1.1)||1, cssVar(chColor[hc]));
+    }
+    updateRateUI();
+    requestAnimationFrame(draw);
+  }
+
+  hrSrc.addEventListener("change", () => { resetHR(); el("hrSrcName").textContent = ["IR","Red","Green"][Number(hrSrc.value)]; });
+
+  // ====== CSV ======
+  function downloadCSV(){
+    if (tAll.length === 0) return;
+    let csv = "Time_s,IR,Red,Green\n";
+    for (let i = 0; i < tAll.length; i++) csv += `${tAll[i].toFixed(4)},${raw[0][i]},${raw[1][i]},${raw[2][i]}\n`;
+    const blob = new Blob([csv], {type:"text/csv"}), url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = `max86916_ppg_${new Date().toISOString().replaceAll(":","-")}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  // ====== Diagnostics parser (v7, 22 bytes) ======
+  function parseDiag(dv){
+    log(`DIAG ${dv.byteLength}B: ${hex(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))}`);
+    if (dv.byteLength < 8) return;
+    const ci_units = dv.getUint16(0,true), mtu = dv.getUint16(2,true), ci_ms = dv.getUint16(4,true)/10, sl = dv.getUint16(6,true);
+    const eff = Math.round(ci_ms*(1+sl));
+    diagTextEl.textContent = sl > 0 ? `CI:${ci_ms.toFixed(1)}ms SL=${sl} Eff:${eff}ms MTU:${mtu}` : `CI:${ci_ms.toFixed(1)}ms (${ci_units>=60?"OK":"pending"}) MTU:${mtu}`;
+    if (dv.byteLength < 22) return;
+    const fs = dv.getUint16(8,true), nch = dv.getUint8(10), spp = dv.getUint8(11);
+    const part = dv.getUint8(12), rev = dv.getUint8(13);
+    const pa = [dv.getUint8(14), dv.getUint8(15), dv.getUint8(16)], rge = dv.getUint8(17);
+    const ovf = dv.getUint16(18,true), i2c = dv.getUint16(20,true);
+    if (fs && (fs !== FS_HZ || nch !== N_CH || spp !== SPP)) { FS_HZ = fs; N_CH = nch; SPP = spp; resetDSP(); resetHR(); rxBuf = new Uint8Array(0); }
+    paInputs.forEach((inp,i)=> inp.value = pa[i]); adcRgeSel.value = String(rge); updateMa();
+    let regs = "";
+    if (dv.byteLength >= 34){
+      const r = []; for (let i = 0; i < 10; i++) r.push(dv.getUint8(22+i));
+      const hx = (v) => "0x" + v.toString(16).padStart(2,"0");
+      const open = dv.getUint8(32), alc = dv.getUint8(33);
+      const openTxt = (open & 0x80) ? ((open & 7) ? ("OPEN:" + ["IR","Red","Green"].filter((_,i)=>open&(1<<i)).join("+")) : "ok") : "n/a";
+      const acq = dv.byteLength >= 36 ? dv.getUint8(34) : null, pw = dv.byteLength >= 36 ? dv.getUint8(35) : ((r[1]) & 3);
+      const pwTxt = ["70µs","120µs","220µs","420µs"][pw & 3];
+      ledPwSel.value = String(pw & 3);
+      const acqTxt = acq === null ? "?" : (acq ? "SMP_RDY per-sample" : "A_FULL burst");
+      regs = ` · MODE1 ${hx(r[0])} MODE2 ${hx(r[1])} PA ${r[2]}/${r[3]}/${r[4]} RGE ${hx(r[5])} SEQ ${hx(r[6])}/${hx(r[7])} FIFO ${hx(r[8])} INTEN ${hx(r[9])} · LED test ${openTxt} · ALC-ovf ${alc}`;
+      log(`  regs: MODE1=${hx(r[0])} MODE2=${hx(r[1])} PA=${r[2]}/${r[3]}/${r[4]} RGE=${hx(r[5])} SEQ=${hx(r[6])}/${hx(r[7])} FIFO=${hx(r[8])} INTEN=${hx(r[9])} ledTest=${openTxt}(experimental) alcOvf=${alc} acq=${acqTxt} pw=${pwTxt}`);
+      regsEl.textContent = `Chip registers → MODE1=${hx(r[0])} (expect 0x03)  MODE2=${hx(r[1])} (ADC_RGE[6:5] SR[4:2] PW[1:0])  LED1/2/3_PA=${r[2]}/${r[3]}/${r[4]}  LED_RANGE=${hx(r[5])}  SEQ1=${hx(r[6])} (0x21)  SEQ2=${hx(r[7])} (0x03)  FIFO_CFG=${hx(r[8])} (0x0c)  INT_EN=${hx(r[9])}  ·  acquisition: ${acqTxt}  ·  pulse ${pwTxt}  ·  LED-open self-test (experimental): ${openTxt}  ·  ALC overflow events: ${alc}`;
+    }
+    sensorTextEl.textContent = part === 0x2B
+      ? `MAX86916 rev ${rev} · ${fs} sps · ${spp}/pkt · ovf ${ovf} · i2c-err ${i2c}`
+      : `Sensor: NOT DETECTED (part 0x${part.toString(16)}) · i2c-err ${i2c}`;
+    log(`  ci=${ci_ms}ms sl=${sl} mtu=${mtu} fs=${fs} nch=${nch} spp=${spp} part=0x${part.toString(16)} rev=${rev} pa=${pa.join("/")} adcRge=${rge} fifoOvf=${ovf} i2cErr=${i2c}`);
+    void regs;
+    if (mtu && mtu < frameSize() + 3) setStatus("warn", `MTU ${mtu} too small for ${frameSize()}-byte frames`);
+  }
+
+  // ====== BLE ======
+  let device=null, server=null, service=null, ppgChar=null, diagChar=null, ctrlChar=null;
+  const lenHist = new Map();
+  function recordNotifLen(n){
+    if (!lenHist.has(n)) log(`notification size seen: ${n}B (frame expects ${frameSize()}B)`);
+    lenHist.set(n,(lenHist.get(n)||0)+1);
+    let best=null, bc=-1; for (const [k,v] of lenHist) if (v>bc){bc=v;best=k;}
+    notifSizeEl.textContent = best===null ? "--" : `${best}B`;
+  }
+  function resetState(){
+    rxBuf = new Uint8Array(0); tAll.length = 0; raw.forEach(a=>a.length=0); sat.forEach(a=>a.length=0); proc.forEach(a=>a.length=0); phase.forEach(p=>{p.s0=p.n0=p.sr=p.nr=0;});
+    resetDSP(); resetHR(); packetCount = 0; lenHist.clear();
+    notifSizeEl.textContent="--"; packetCountEl.textContent="0"; rateHz.textContent="0";
+    lastRateCheck = performance.now(); lastSampleCount = 0;
+    ["hrVal","spo2Val","piVal","rVal","dcIr","dcRed","dcGreen"].forEach(id=>el(id).textContent="--");
+  }
+  function onDisconnected(){ log(`disconnected (samples=${tAll.length}, packets=${packetCount})`); setStatus("bad","Disconnected"); btnConnect.disabled=false; btnDisconnect.disabled=true; btnApply.disabled=true; }
+
+  async function connect(){
+    if (!navigator.bluetooth){ alert("Web Bluetooth not available. Use Chrome (HTTPS). iOS Safari is not supported."); return; }
+    setStatus("warn","Opening BLE chooser…");
+    const prefix = (namePrefixInput?.value || "").trim();
+    const options = prefix ? { filters:[{ namePrefix: prefix }], optionalServices:[SERVICE_UUID] }
+                           : { acceptAllDevices:true, optionalServices:[SERVICE_UUID] };
+    device = await navigator.bluetooth.requestDevice(options);
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+
+    setStatus("warn","Connecting…");      server  = await device.gatt.connect();
+    setStatus("warn","Getting service…"); service = await server.getPrimaryService(SERVICE_UUID);
+    setStatus("warn","Getting characteristics…");
+    ppgChar = await service.getCharacteristic(PPG_CHAR_UUID);
+    try { diagChar = await service.getCharacteristic(DIAG_CHAR_UUID); } catch(_e){ diagChar = null; log("diag characteristic not found"); }
+    try { ctrlChar = await service.getCharacteristic(CTRL_CHAR_UUID); } catch(_e){ ctrlChar = null; log("ctrl characteristic not found (old firmware?)"); }
+    log(`device "${device.name}" id=${device.id.slice(0,12)}… chars: ppg=yes diag=${!!diagChar} ctrl=${!!ctrlChar}`);
+
+    resetState();
+
+    // Read diag FIRST so frame geometry (fs / spp / n_ch) is known before data flows
+    if (diagChar){
+      try { parseDiag(await diagChar.readValue()); } catch(e){ log(`diag read failed: ${e?.message||e}`); }
+      // re-read after the firmware's 5 s update (connection params + registers)
+      setTimeout(async () => { try { if (diagChar && device?.gatt?.connected) parseDiag(await diagChar.readValue()); } catch(_e){} }, 7000);
+      try {
+        await diagChar.startNotifications();
+        diagChar.addEventListener("characteristicvaluechanged", (evt) => parseDiag(evt.target.value));
+      } catch(_e){}
+    }
+
+    setStatus("warn","Subscribing…");
+    await ppgChar.startNotifications();
+    ppgChar.addEventListener("characteristicvaluechanged", (evt) => {
+      const dv = evt.target.value;
+      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      recordNotifLen(bytes.length); appendToRxBuf(bytes); parseFramesFromRxBuf();
+    });
+
+    setStatus("ok", `Connected: ${device.name || "BLE device"}`);
+    btnConnect.disabled=true; btnDisconnect.disabled=false; btnClear.disabled=false; btnSave.disabled=false;
+    btnApply.disabled = !ctrlChar;
+    requestAnimationFrame(draw);
+  }
+
+  async function disconnect(){
+    try{ if (ppgChar)  await ppgChar.stopNotifications(); }catch(_e){}
+    try{ if (diagChar) await diagChar.stopNotifications(); }catch(_e){}
+    try{ if (device && device.gatt.connected) device.gatt.disconnect(); }catch(_e){}
+    device=server=service=ppgChar=diagChar=ctrlChar=null;
+    onDisconnected();
+  }
+
+  async function applyConfig(){
+    if (!ctrlChar) return;
+    const clamp = (v) => Math.max(0, Math.min(255, Math.round(Number(v)||0)));
+    const buf = new Uint8Array([clamp(paInputs[0].value), clamp(paInputs[1].value), clamp(paInputs[2].value), Number(adcRgeSel.value)&3, Number(ledPwSel.value)&3]);
+    try {
+      if (ctrlChar.writeValueWithoutResponse) await ctrlChar.writeValueWithoutResponse(buf);
+      else await ctrlChar.writeValue(buf);
+      resetDSP(); resetHR();                     // DC level changes → restart filters
+      log(`ctrl write: ${hex(buf)} (IR/Red/Green PA, ADC_RGE)`);
+    } catch(err){ log(`CTRL WRITE ERROR: ${err?.message || err}`); }
+  }
+
+  btnTheme.addEventListener("click", () => {
+    const cur = document.body.getAttribute("data-theme");
+    document.body.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+  });
+  btnConnect.addEventListener("click", async () => {
+    try{ await connect(); }
+    catch(err){ console.error(err); log(`CONNECT ERROR: ${err?.name}: ${err?.message || err}`); setStatus("bad","Failed"); btnConnect.disabled=false; btnDisconnect.disabled=true; }
+  });
+  btnDisconnect.addEventListener("click", disconnect);
+  btnClear.addEventListener("click", resetState);
+  btnSave.addEventListener("click", downloadCSV);
+  btnApply.addEventListener("click", applyConfig);
+
+  setStatus("bad","Disconnected");
+  window.addEventListener("resize", () => { resizeCanvasToDisplaySize(canvasRaw); resizeCanvasToDisplaySize(canvasProc); });
+})();
+</script>
+</body>
+</html>
